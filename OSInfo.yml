@@ -1,7 +1,5 @@
 ---
-- hosts: ubuntu
-  become: true
+- hosts: all
   tasks:
-    - name: Print OS Info
-      ansible.builtin.package:
-        name: apache2
+    - name: Ping
+      ansible.builtin.ping
