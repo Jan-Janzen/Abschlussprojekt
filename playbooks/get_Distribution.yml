@@ -10,9 +10,10 @@
 
     - name: Check for available updates on Debian/Ubuntu
       when: ansible_os_family == "Debian"
-      shell: apt list --upgradable | grep '^\d+ upgraded'
+      shell: apt list --upgradable
       register: apt_updates
       changed_when: false
+      failed_when: false
 
     - name: Check for available updates on RHEL/CentOS/Fedora
       when: ansible_os_family == "RedHat"
