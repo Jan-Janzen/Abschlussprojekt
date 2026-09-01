@@ -1,0 +1,44 @@
+---
+- name: Get distribution and update status
+  hosts: all
+  gather_facts: yes
+  become: yes
+
+  tasks:
+    - name: Get distribution and version
+      debug:
+        msg: "Host {{ inventory_hostname }} runs {{ ansible_distribution }} {{ ansible_distribution_version }}"
+
+    - name: Check for available updates on Debian/Ubuntu
+      when: ansible_os_family == "Debian"
+      shell: apt-get -s upgrade | grep -P '^\d+ upgraded'
+      register: apt_updates
+      changed_when: false
+
+    - name: Check for available updates on RHEL/CentOS/Fedora
+      when: ansible_os_family == "RedHat"
+      shell: yum check-update
+      register: yum_updates
+      failed_when: false
+      changed_when: false
+
+    - name: Output update status Debian/Ubuntu
+      when: ansible_os_family == "Debian"
+      debug:
+        msg: >-
+          {% if apt_updates.stdout_lines | length == 0 %}
+            No available updates on {{ inventory_hostname }}.
+          {% else %}
+            Updates available on {{ inventory_hostname }}: {{ apt_updates.stdout }}
+          {% endif %}
+
+    - name: Output update status RHEL/CentOS/Fedora
+      when: ansible_os_family == "RedHat"
+      debug:
+        msg: >-
+          {% if yum_updates.stdout_lines | length == 0 %}
+            No available updates on {{ inventory_hostname }}.
+          {% else %}
+            Updates available on {{ inventory_hostname }}:
+            {{ yum_updates.stdout }}
+          {% endif %}
