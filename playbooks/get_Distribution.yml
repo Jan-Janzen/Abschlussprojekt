@@ -2,7 +2,6 @@
 - name: Get distribution and update status
   hosts: ubuntu
   gather_facts: yes
-  become: yes
 
   tasks:
     - name: Get distribution and version
