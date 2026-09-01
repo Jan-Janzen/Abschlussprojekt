@@ -10,7 +10,7 @@
 
     - name: Check for available updates on Debian/Ubuntu
       when: ansible_os_family == "Debian"
-      shell: apt-get -s upgrade | grep -P '^\d+ upgraded'
+      shell: apt list --upgradable | grep '^\d+ upgraded'
       register: apt_updates
       changed_when: false
 
