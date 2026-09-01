@@ -1,5 +1,5 @@
 ---
-- hosts: ubuntu, control
+- hosts: all
   tasks:
     - name: Ping
       ansible.builtin.ping:
