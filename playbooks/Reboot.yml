@@ -1,0 +1,6 @@
+---
+- name: Reboot machines
+  hosts: Ubuntu
+
+  tasks:
+    ansible.builtin.Reboot
