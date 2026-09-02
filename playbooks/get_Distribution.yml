@@ -29,9 +29,9 @@
       failed_when: false
       changed_when: false
 
-    - name: Show installed packages
-      debug:
-        var: apt_installed.stdout_lines
+#    - name: Show installed packages
+#      debug:
+#        var: apt_installed.stdout_lines
     
 #    - name: Show available Updates
 #      debug:
