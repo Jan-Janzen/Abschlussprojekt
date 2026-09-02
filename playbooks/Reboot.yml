@@ -3,16 +3,6 @@
   hosts: all
 
   tasks:
-  - name: Show rebooting host
-    ansible.builtin.debug:
-      msg: "{{inventory_hostname}} is rebooting..."
-
-
   - name: Reboot
     ansible.builtin.reboot:
       reboot_timeout: 0
-
-
-  - name: show online host
-    ansible.builtin.debug:
-        msg: "{{inventory_hostname}} is online"
