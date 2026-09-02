@@ -1,6 +1,6 @@
 ---
 - name: Reboot machines
-  hosts: Ubuntu
+  hosts: all
 
   tasks:
   - name: Show rebooting host
