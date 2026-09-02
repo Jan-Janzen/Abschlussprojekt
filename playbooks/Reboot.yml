@@ -3,4 +3,13 @@
   hosts: Ubuntu
 
   tasks:
-    ansible.builtin.Reboot
+    -name: Show rebooting host
+      ansible.builtin.debug:
+        msg: "{{inventory_hostname}} is rebooting..."
+
+    -name: Reboot
+      ansible.builtin.Reboot
+
+    -name: show online host
+      ansible.builtin.debug:
+        msg: "{{inventory_hostname}} is online"
