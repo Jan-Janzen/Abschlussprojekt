@@ -10,7 +10,7 @@
 
     - name: Get installed software
       when: ansible_os_family == "Debian"
-      shell: apt list --installed
+      shell: dpkg-query -W -f='${binary:Package}\n'
       register: apt_installed
       changed_when: false
       failed_when: false
