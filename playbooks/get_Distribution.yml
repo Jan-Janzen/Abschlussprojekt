@@ -8,6 +8,10 @@
       debug:
         msg: "Host {{ inventory_hostname }} runs {{ ansible_distribution }} {{ ansible_distribution_version }}"
 
+    - name: Get installed software
+      when: ansible_os_family == "Debian"
+      shell: apt list --installed
+
     - name: Check for available updates on Debian/Ubuntu
       when: ansible_os_family == "Debian"
       shell: apt list --upgradable
