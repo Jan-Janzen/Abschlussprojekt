@@ -33,31 +33,33 @@
       debug:
         var: apt_installed.stdout_lines
     
-    - name: Show available Updates
-      debug:
-        var: apt_updates.stdout_lines
+#    - name: Show available Updates
+#      debug:
+#        var: apt_updates.stdout_lines
     
     - name: Output available updates Debian/Ubuntu
       when: ansible_os_family == "Debian"
       debug:
         msg: >-
           {%set installed = apt_installed.stdout_lines | default ([]) %}
-          {% set updates = apt_updates.stdout_lines | default([]) | select(
-            'regex_search',
-            '^(' + installed | join('|') + ')/'
-          ) | list %}
-          {% if updates| length == 0 %}
+          {% set upgradable_packages = [] %}
+          {% for line in apt_updates.stdout_lines | default([]) %}
+            {% set pkg = line.split('/')[0] %}
+            {% if pkg in installed %}
+              {% set _ = upgradable_packages.append(line) %}
+            {% endif %}
+          {% endfor %}
+          {% if upgradable_packages | length == 0 %}
             No available updates on {{ inventory_hostname }}.
           {% else %}
             updates available on {{inventory_hostname}}:
-            {{ updates | join('\n')}}
+            {{ upgradable_packages | join('\n')}}
           {% endif %}
 
-#          {% if apt_updates.stdout_lines | length == 0 %}
-#            No available updates on {{ inventory_hostname }}.
-#          {% else %}
-#            Updates available on {{ inventory_hostname }}: {{ apt_updates.stdout }}
-#          {% endif %}
+#          {% set updates = apt_updates.stdout_lines | default([]) | select(
+#            'regex_search',
+#            '^(' + installed | join('|') + ')/'
+#          ) | list %}
 
     - name: Output update status RHEL/CentOS/Fedora
       when: ansible_os_family == "RedHat"
