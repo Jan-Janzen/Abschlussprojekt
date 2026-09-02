@@ -20,8 +20,6 @@
       register: apt_updates
       changed_when: false
       failed_when: false
-      debug:
-        var: apt_updates.stdout_lines
 
     - name: Check for available updates on RHEL/CentOS/Fedora
       when: ansible_os_family == "RedHat"
