@@ -1,7 +1,9 @@
 ---
-- name: Reboot machines
-  hosts: ubuntu
-
+- name: Neustart aller Server
+  hosts: Ubuntu
+  become: yes
+  
   tasks:
-  - name: Reboot
-    shell: shudown -r +1
+    - name: Server neustarten
+      reboot:
+        reboot_timeout: 600 
