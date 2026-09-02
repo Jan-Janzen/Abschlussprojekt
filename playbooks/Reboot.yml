@@ -8,7 +8,7 @@
       msg: "{{inventory_hostname}} is rebooting..."
 
   - name: Reboot
-    ansible.builtin.Reboot:
+    ansible.builtin.reboot:
       reboot_timeout: 0
 
   - name: show online host
