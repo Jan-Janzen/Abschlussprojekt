@@ -29,12 +29,20 @@
       failed_when: false
       changed_when: false
 
+    - name: Show installed packages
+      debug:
+        var: apt_installed.stdout_lines
+    
+    - name: Show available Updates
+      debug:
+        var: apt_updates.stdout_lines
+    
     - name: Output available updates Debian/Ubuntu
       when: ansible_os_family == "Debian"
       debug:
         msg: >-
-          {%set installed = apt_installed.stdout_lines %}
-          {% set updates = apt_updates.stdout_lines | select(
+          {%set installed = apt_installed.stdout_lines | default ([]) %}
+          {% set updates = apt_updates.stdout_lines | default([]) | select(
             'regex_search',
             '^(' + installed | join('|') + ')/'
           ) | list %}
