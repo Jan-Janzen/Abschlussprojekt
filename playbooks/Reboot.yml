@@ -4,5 +4,4 @@
 
   tasks:
   - name: Reboot
-    ansible.builtin.reboot:
-      reboot_timeout: 0
+    shell: shudown -r +1
