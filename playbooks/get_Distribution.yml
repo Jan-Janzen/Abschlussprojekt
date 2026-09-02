@@ -37,8 +37,8 @@
           {% set updates = apt_updates.stdout_lines | select(
             'regex_search',
             '^(' + installed | join('|') + ')/'
-          ) | lsit %}
-          {% if udpates| length == 0 %}
+          ) | list %}
+          {% if updates| length == 0 %}
             No available updates on {{ inventory_hostname }}.
           {% else %}
             updates available on {{inventory_hostname}}:
