@@ -6,11 +6,12 @@
   tasks:
     - name: Get distribution and version
       debug:
-        msg: "Host {{ inventory_hostname }} runs {{ ansible_distribution }} {{ ansible_distribution_version }}"
+        msg: "Host {{ inventory_hostname }} runs on {{ ansible_distribution }} {{ ansible_distribution_version }}"
 
     - name: Get installed software
       when: ansible_os_family == "Debian"
       shell: apt list --installed
+      register: apt_installed
       changed_when: false
       failed_when: false
 
@@ -28,10 +29,22 @@
       failed_when: false
       changed_when: false
 
-#    - name: Output update status Debian/Ubuntu
-#      when: ansible_os_family == "Debian"
-#      debug:
-#        msg: >-
+    - name: Output available updates Debian/Ubuntu
+      when: ansible_os_family == "Debian"
+      debug:
+        msg: >-
+          {%set installed = apt_installed.stdout_lines %}
+          {% set updates = apt_updates.stdout_lines | select(
+            'regex_search',
+            '^(' + installed | join('|') + ')/'
+          ) | lsit %}
+          {% if udpates| length == 0 %}
+            No available updates on {{ inventory_hostname }}.
+          {% else %}
+            updates available on {{inventory_hostname}}:
+            {{ updates | join('\n')}}
+          {% endif %}
+
 #          {% if apt_updates.stdout_lines | length == 0 %}
 #            No available updates on {{ inventory_hostname }}.
 #          {% else %}
