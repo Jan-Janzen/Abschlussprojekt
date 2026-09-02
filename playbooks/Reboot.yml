@@ -6,11 +6,17 @@
   - name: Show rebooting host
     ansible.builtin.debug:
       msg: "{{inventory_hostname}} is rebooting..."
+      changed_when: false
+      failed_when: false
 
   - name: Reboot
     ansible.builtin.reboot:
       reboot_timeout: 0
+      changed_when: false
+      failed_when: false
 
   - name: show online host
     ansible.builtin.debug:
         msg: "{{inventory_hostname}} is online"
+        changed_when: false
+        failed_when: false
