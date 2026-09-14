@@ -5,5 +5,10 @@
   
   tasks:
     - name: Server neustarten
-      reboot:
-        reboot_timeout: 600 
+      ansible.builtin.reboot:
+        reboot_timeout: 1800
+        msg: "Auto Reboot durch Ansible Semaphore"
+
+    - name: Warten bis System wieder online
+      ansible.builtin.wait_for_connection:
+        timeout: 300
