@@ -1,6 +1,6 @@
 ---
 - name: Neustart aller Server
-  hosts: Ubuntu
+  hosts: ubuntu
   become: yes
   
   tasks:
