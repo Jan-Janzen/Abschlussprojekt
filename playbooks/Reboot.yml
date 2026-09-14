@@ -1,7 +1,6 @@
 ---
 - name: Neustart aller Server
   hosts: ubuntu
-  become: yes
   
   tasks:
     - name: Server neustarten
