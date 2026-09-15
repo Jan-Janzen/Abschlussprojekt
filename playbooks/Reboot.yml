@@ -1,6 +1,7 @@
 ---
 - name: Neustart aller Server
   hosts: ubuntu
+  become user: administrator
   become: yes
   
   tasks:
