@@ -1,0 +1,248 @@
+---
+# SUSE Linux Update-Playbook (SLES / openSUSE Leap / openSUSE Tumbleweed)
+# Gegenstück zum Ubuntu-Playbook.
+# Benötigt: Collection ansible.builtin (Core), zypper auf den Zielhosts
+#
+# Wichtige Variablen:
+#   perform_release_upgrade: false   # Release-/Service-Pack-Upgrade durchführen
+#   leap_target_release: ""          # nur Leap, z. B. "15.6" oder "16.0"
+#   perform_dist_upgrade: auto       # auto = nur Tumbleweed, true/false = erzwingen
+#   cleanup_unneeded: true           # nicht mehr benötigte Pakete entfernen
+#   report_recipient: jannik.janzen@schuetz.net
+
+- name: SUSE Linux Update
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    perform_release_upgrade: false
+    leap_target_release: ""
+    perform_dist_upgrade: auto
+    cleanup_unneeded: true
+    report_dir: /tmp/semaphore-report
+    report_recipient: jannik.janzen@schuetz.net
+    report_file: "{{ report_dir }}/update-report.txt"
+
+  pre_tasks:
+    - name: Sicherstellen, dass es sich um ein SUSE-System handelt
+      ansible.builtin.assert:
+        that: ansible_os_family == 'Suse'
+        fail_msg: "{{ inventory_hostname }} ist kein SUSE-System."
+
+    - name: Distributionstyp bestimmen
+      ansible.builtin.set_fact:
+        is_sles: "{{ ansible_distribution in ['SLES', 'SLES_SAP'] }}"
+        is_leap: "{{ ansible_distribution == 'openSUSE Leap' }}"
+        is_tumbleweed: "{{ ansible_distribution == 'openSUSE Tumbleweed' }}"
+
+  tasks:
+    # ------------------------------------------------------------------
+    # Systemzustand VOR dem Update
+    # ------------------------------------------------------------------
+    - name: SUSE-Version vor dem Update auslesen
+      ansible.builtin.shell: . /etc/os-release && echo "$PRETTY_NAME"
+      register: os_before
+      changed_when: false
+
+    - name: Kernel-Version vor dem Update auslesen
+      ansible.builtin.command: uname -r
+      register: kernel_before
+      changed_when: false
+
+    # ------------------------------------------------------------------
+    # Repositories aktualisieren (Gegenstück zu apt update)
+    # ------------------------------------------------------------------
+    - name: Paketquellen aktualisieren
+      ansible.builtin.command: zypper --non-interactive refresh
+      register: zypper_refresh
+      changed_when: false
+
+    # ------------------------------------------------------------------
+    # Verfügbare Updates ermitteln
+    # ------------------------------------------------------------------
+    - name: Verfügbare Paketupdates auslesen
+      ansible.builtin.command: zypper --quiet --non-interactive list-updates
+      register: updates_raw
+      changed_when: false
+
+    - name: Liste der Updates erstellen
+      ansible.builtin.set_fact:
+        updates_list: "{{ updates_raw.stdout_lines | select('match', '^v ') | list }}"
+
+    - name: Anzahl der Updates bestimmen
+      ansible.builtin.set_fact:
+        updates_count: "{{ updates_list | length }}"
+
+    - name: Anzahl der Updates anzeigen
+      ansible.builtin.debug:
+        msg: "{{ updates_count }} Updates verfügbar"
+
+    # ------------------------------------------------------------------
+    # Pakete aktualisieren
+    # ------------------------------------------------------------------
+    - name: Installierte Pakete aktualisieren (zypper update)
+      community.general.zypper:
+        name: '*'
+        state: latest
+        update_cache: false
+      register: zypper_update
+
+    - name: Distribution-Upgrade durchführen (zypper dup)
+      community.general.zypper:
+        name: '*'
+        state: dist-upgrade
+        update_cache: false
+      register: zypper_dup
+      when: >-
+        (perform_dist_upgrade | string | lower == 'true') or
+        (perform_dist_upgrade | string | lower == 'auto' and is_tumbleweed)
+
+    # ------------------------------------------------------------------
+    # Nicht mehr benötigte Pakete entfernen (Gegenstück zu autoremove)
+    # ------------------------------------------------------------------
+    - name: Nicht mehr benötigte Pakete ermitteln
+      ansible.builtin.shell: >-
+        zypper --quiet --non-interactive packages --unneeded
+        | awk -F'|' '$1 ~ /^i/ {gsub(/ /,"",$3); print $3}'
+      register: unneeded_pkgs
+      changed_when: false
+      failed_when: false
+      when: cleanup_unneeded | bool
+
+    - name: Nicht mehr benötigte Pakete samt Abhängigkeiten entfernen
+      ansible.builtin.command: >-
+        zypper --non-interactive remove --clean-deps
+        {{ unneeded_pkgs.stdout_lines | join(' ') }}
+      register: autoremove_result
+      when:
+        - cleanup_unneeded | bool
+        - unneeded_pkgs.stdout_lines | default([]) | length > 0
+
+    # ------------------------------------------------------------------
+    # Release-/Service-Pack-Upgrade prüfen
+    # ------------------------------------------------------------------
+    - name: Verfügbare Migration prüfen (SLES)
+      ansible.builtin.command: zypper --non-interactive migration --query
+      register: sles_migration_check
+      changed_when: false
+      failed_when: false
+      when: is_sles
+
+    - name: Release-Upgrade-Verfügbarkeit bestimmen
+      ansible.builtin.set_fact:
+        release_upgrade_available: >-
+          {{
+            (is_sles and sles_migration_check.rc == 0
+              and 'No migration available' not in sles_migration_check.stdout
+              and 'Keine Migration' not in sles_migration_check.stdout)
+            or
+            (is_leap and leap_target_release | length > 0
+              and leap_target_release != ansible_distribution_version)
+          }}
+
+    - name: Release-Upgrade-Status anzeigen
+      ansible.builtin.debug:
+        msg: "Release-Upgrade verfügbar: {{ release_upgrade_available }}"
+
+    # ------------------------------------------------------------------
+    # Optionales Release-Upgrade (nicht interaktiv)
+    # ------------------------------------------------------------------
+    - name: Release-Upgrade durchführen (SLES)
+      ansible.builtin.command: >-
+        zypper --non-interactive migration
+        --auto-agree-with-licenses --allow-vendor-change
+      register: release_upgrade_result
+      when:
+        - perform_release_upgrade | bool
+        - release_upgrade_available | bool
+        - is_sles
+
+    - name: Release-Upgrade durchführen (openSUSE Leap)
+      ansible.builtin.shell: |
+        zypper --non-interactive --releasever {{ leap_target_release }} refresh &&
+        zypper --non-interactive --releasever {{ leap_target_release }} \
+          dist-upgrade --auto-agree-with-licenses --allow-vendor-change
+      register: release_upgrade_result
+      when:
+        - perform_release_upgrade | bool
+        - release_upgrade_available | bool
+        - is_leap
+
+    # ------------------------------------------------------------------
+    # Systemzustand NACH dem Update
+    # ------------------------------------------------------------------
+    - name: SUSE-Version nach dem Update auslesen
+      ansible.builtin.shell: . /etc/os-release && echo "$PRETTY_NAME"
+      register: os_after
+      changed_when: false
+
+    - name: Kernel-Version nach dem Update auslesen
+      ansible.builtin.command: uname -r
+      register: kernel_after
+      changed_when: false
+
+    # ------------------------------------------------------------------
+    # Neustart prüfen (rc 102 = Neustart erforderlich)
+    # ------------------------------------------------------------------
+    - name: Erforderlichen Neustart prüfen
+      ansible.builtin.command: zypper needs-rebooting
+      register: reboot_check
+      changed_when: false
+      failed_when: reboot_check.rc not in [0, 102]
+
+    - name: Neustart-Status setzen
+      ansible.builtin.set_fact:
+        reboot_required: "{{ reboot_check.rc == 102 }}"
+
+    - name: System bei Bedarf neu starten
+      ansible.builtin.reboot:
+        reboot_timeout: 1800
+      when: reboot_required | bool
+
+    # ------------------------------------------------------------------
+    # Report erzeugen (einmalig auf localhost)
+    # ------------------------------------------------------------------
+    - name: Report-Verzeichnis anlegen
+      ansible.builtin.file:
+        path: "{{ report_dir }}"
+        state: directory
+        mode: "0755"
+      delegate_to: localhost
+      become: false
+      run_once: true
+
+    - name: Textreport erstellen
+      ansible.builtin.copy:
+        dest: "{{ report_file }}"
+        mode: "0644"
+        content: |
+          SUSE Update Report - {{ ansible_date_time.iso8601 | default('') }}
+          ==========================================================
+
+          {% for host in ansible_play_hosts %}
+          Host: {{ host }}
+            Version vorher : {{ hostvars[host].os_before.stdout }}
+            Version nachher: {{ hostvars[host].os_after.stdout }}
+            Kernel vorher  : {{ hostvars[host].kernel_before.stdout }}
+            Kernel nachher : {{ hostvars[host].kernel_after.stdout }}
+            Updates (vorab): {{ hostvars[host].updates_count }}
+            Neustart nötig : {{ 'ja' if hostvars[host].reboot_required else 'nein' }}
+            Autoremove     : {{ (hostvars[host].unneeded_pkgs.stdout_lines | default([])) | length }} Paket(e)
+            Release-Upgrade verfügbar: {{ 'ja' if hostvars[host].release_upgrade_available | bool else 'nein' }}
+
+          {% endfor %}
+      delegate_to: localhost
+      become: false
+      run_once: true
+
+    # ------------------------------------------------------------------
+    # Report per E-Mail versenden
+    # ------------------------------------------------------------------
+    - name: Report per E-Mail versenden
+      ansible.builtin.include_tasks: mail-reporting.yml
+      vars:
+        mail_to: "{{ report_recipient }}"
+        mail_subject: "SUSE Update Report"
+        mail_attachment: "{{ report_file }}"
+      run_once: true
