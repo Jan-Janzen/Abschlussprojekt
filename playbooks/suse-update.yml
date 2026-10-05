@@ -11,7 +11,7 @@
 #   report_recipient: jannik.janzen@schuetz.net
 
 - name: SUSE Linux Update
-  hosts: all
+  hosts: suse
   become: true
   gather_facts: true
 
