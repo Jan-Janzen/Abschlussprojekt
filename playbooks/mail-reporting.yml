@@ -1,0 +1,48 @@
+---
+- name: Prüfen ob Report-Datei existiert
+  ansible.builtin.stat:
+    path: "{{ mail_report_file }}"
+  register: mail_report_file_stat
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Abbrechen wenn Report-Datei nicht existiert
+  ansible.builtin.fail:
+    msg: "Report-Datei wurde nicht gefunden: {{ mail_report_file }}"
+  when: not mail_report_file_stat.stat.exists
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Report per Mail versenden
+  community.general.mail:
+    host: "{{ mail_smtp_host | default('smtp-de.schuetz.org') }}"
+    port: "{{ mail_smtp_port | default(25) }}"
+    from: "{{ mail_from | default('semaphore@schuetz.net') }}"
+    to: "{{ mail_to }}"
+    subject: "{{ mail_subject | default('Semaphore Report') }}"
+    body: |
+      {{ mail_body | default('Hallo,
+
+      anbei der aktuelle Report aus Semaphore.
+
+      Grüße
+      Semaphore') }}
+    attach:
+      - "{{ mail_report_file }}"
+  register: mail_send_result
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Report nach erfolgreichem Versand löschen
+  ansible.builtin.file:
+    path: "{{ mail_report_file }}"
+    state: absent
+  when:
+    - mail_delete_report_after_send | default(false) | bool
+    - mail_send_result is not failed
+  delegate_to: localhost
+  become: false
+  run_once: true

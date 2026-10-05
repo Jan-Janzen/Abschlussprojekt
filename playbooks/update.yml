@@ -1,0 +1,265 @@
+---
+- name: update 
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    perform_release_upgrade: false
+    report_dir: /tmp/semaphore-report
+
+  tasks:
+    - name: get ubuntu version before update
+      ansible.builtin.command: lsb_release -ds
+      register: ubuntu_version_before
+      changed_when: false
+      failed_when: false
+
+    - name: get kernel version before update
+      ansible.builtin.command: uname -r
+      register: kernel_before
+      changed_when: false
+
+    - name: refresh packet source
+      ansible.builtin.apt:
+        update_cache: true
+      register: apt_update_result
+
+    - name: count available updates
+      ansible.builtin.shell: |
+        apt list --upgradable 2>/dev/null | tail -n +2 | wc -l
+      register: updates_available_before
+      changed_when: false
+
+    - name: list available updates before upgrade
+      ansible.builtin.shell: |
+        apt list --upgradable 2>/dev/null | tail -n +2
+      register: updates_list_before
+      changed_when: false
+      failed_when: false
+
+    - name: refresh packets
+      ansible.builtin.apt:
+        upgrade: yes
+      register: apt_upgrade_result
+
+    - name: full upgrade
+      ansible.builtin.apt:
+        upgrade: dist
+      register: apt_full_upgrade_result
+
+    - name: delete not used packets
+      ansible.builtin.apt:
+        autoremove: true
+        purge: true
+      register: apt_autoremove_result
+
+    - name: check for available release upgrade
+      ansible.builtin.command:
+        cmd: do-release-upgrade -c
+      register: release_upgrade_check
+      changed_when: false
+      failed_when: false
+
+    - name: evaluate available ubuntu release upgrade
+      ansible.builtin.set_fact:
+        available_release_upgrade: >-
+          {% set upgrade_lines = release_upgrade_check.stdout_lines | default([]) | select('search', "^New release '") | list %}
+          {{ (upgrade_lines[0] | regex_replace("^New release '", "") | regex_replace("' available\\.?$", "")) if (upgrade_lines | length > 0) else "No Upgrade available" }}
+
+    - name: execute release upgradeds
+      ansible.builtin.command:
+        cmd: do-release-upgrade -f DistUpgradeViewNonInteractive
+      register: release_upgrade_result
+      when:
+        - perform_release_upgrade | default(false) | bool
+        - "'New release' in (release_upgrade_check.stdout | default(''))"
+      changed_when: release_upgrade_result.rc == 0
+      failed_when: false
+
+    - name: get release upgrade status
+      ansible.builtin.set_fact:
+        release_upgrade_status: >-
+          {% if not (perform_release_upgrade | default(false) | bool) %}
+          deactivated
+          {% elif 'New release' not in (release_upgrade_check.stdout | default('')) %}
+          Kein Upgrade
+          {% elif release_upgrade_result is defined and release_upgrade_result.rc | default(1) == 0 %}
+          Durchgeführt
+          {% else %}
+          Fehler
+          {% endif %}
+
+    - name: get ubuntu version after upgrade
+      ansible.builtin.command: lsb_release -ds
+      register: ubuntu_version_after
+      changed_when: false
+      failed_when: false
+
+    - name: get kernel version after upgrade
+      ansible.builtin.command: uname -r
+      register: kernel_after
+      changed_when: false
+
+    - name: check reboot necessary
+      ansible.builtin.stat:
+        path: /var/run/reboot-required
+      register: reboot_required
+
+    - name: reboot
+      ansible.builtin.reboot:
+        reboot_timeout: 1800
+        msg: "reboot via Ansible/Semaphore after ubuntu update"
+      register: reboot_result
+      when: reboot_required.stat.exists
+
+
+# --- REPORT ---
+
+
+    - name: create update report
+      block:
+
+        - name: set report timestamp
+          ansible.builtin.set_fact:
+            report_timestamp: "{{ lookup('pipe', 'date +%Y-%m-%d_%H-%M-%S') }}"
+
+        - name: set report file path
+          ansible.builtin.set_fact:
+            report_file: "{{ report_dir }}/ubuntu-update-report-{{ report_timestamp }}.txt"
+
+        - name: create report directory
+          ansible.builtin.file:
+            path: "{{ report_dir }}"
+            state: directory
+            mode: "0755"
+
+        - name: generate update report
+          ansible.builtin.copy:
+            dest: "{{ report_file }}"
+            mode: "0644"
+            content: |
+              Ubuntu Update Report
+              ====================
+
+              Executed: {{ lookup('pipe', 'date "+%Y-%m-%d %H:%M:%S"') }}
+              Playbook: Complete Ubuntu update with report
+              Release upgrade activated: {{ perform_release_upgrade | default(false) | bool }}
+
+              Overview
+              ---------
+
+              {{ "%-14s %-16s %-16s %-18s %-22s %-14s %-8s %-10s %-10s" | format("Host", "Ubuntu before", "Ubuntu after", "Kernel", "Upgrade target", "Release upg.", "Updates", "Reboot", "Autoremove") }}
+              {{ "-" * 136 }}
+              {% for host in ansible_play_hosts %}
+              {{ "%-14s %-16s %-16s %-18s %-22s %-14s %-8s %-10s %-10s" | format(
+                host,
+                hostvars[host].ubuntu_version_before.stdout | default("unknown") | regex_replace("^Ubuntu ", ""),
+                hostvars[host].ubuntu_version_after.stdout | default("unknown") | regex_replace("^Ubuntu ", ""),
+                hostvars[host].kernel_after.stdout | default("unknown"),
+                hostvars[host].available_release_upgrade | default("unknown"),
+                hostvars[host].release_upgrade_status | default("unknown") | trim,
+                hostvars[host].updates_available_before.stdout | default("n/a"),
+                "Yes" if (hostvars[host].reboot_result.changed | default(false)) else ("Necessary" if (hostvars[host].reboot_required.stat.exists | default(false)) else "No"),
+                "Yes" if (hostvars[host].apt_autoremove_result.changed | default(false)) else "No"
+              ) }}
+              {% endfor %}
+
+              Summary
+              ---------------
+
+              Server total: {{ ansible_play_hosts | length }}
+              Release upgrade activated: {{ perform_release_upgrade | default(false) | bool }}
+
+              Server with available release upgrade:
+              {% set ns = namespace(found=false) %}
+              {% for host in ansible_play_hosts %}
+              {% if hostvars[host].available_release_upgrade | default('No upgrade available') != 'No upgrade available' %}
+              - {{ host }}: {{ hostvars[host].ubuntu_version_before.stdout | default('unknown') }} -> {{ hostvars[host].available_release_upgrade }}
+              {% set ns.found = true %}
+              {% endif %}
+              {% endfor %}
+              {% if not ns.found %}
+              None
+              {% endif %}
+
+              Server with release upgrade executed:
+              {% set ns = namespace(found=false) %}
+              {% for host in ansible_play_hosts %}
+              {% if (hostvars[host].release_upgrade_status | default('') | trim) == 'Executed' %}
+              - {{ host }}: {{ hostvars[host].ubuntu_version_before.stdout | default('unknown') }} -> {{ hostvars[host].ubuntu_version_after.stdout | default('unknown') }}
+              {% set ns.found = true %}
+              {% endif %}
+              {% endfor %}
+              {% if not ns.found %}
+              None
+              {% endif %}
+
+              Server with release upgrade error:
+              {% set ns = namespace(found=false) %}
+              {% for host in ansible_play_hosts %}
+              {% if (hostvars[host].release_upgrade_status | default('') | trim) == 'Error' %}
+              - {{ host }}
+              {% set ns.found = true %}
+              {% endif %}
+              {% endfor %}
+              {% if not ns.found %}
+              None
+              {% endif %}
+
+              Server with executed reboot:
+              {% set ns = namespace(found=false) %}
+              {% for host in ansible_play_hosts %}
+              {% if hostvars[host].reboot_result.changed | default(false) %}
+              - {{ host }}
+              {% set ns.found = true %}
+              {% endif %}
+              {% endfor %}
+              {% if not ns.found %}
+              None
+              {% endif %}
+
+              Server with Autoremove changes:
+              {% set ns = namespace(found=false) %}
+              {% for host in ansible_play_hosts %}
+              {% if hostvars[host].apt_autoremove_result.changed | default(false) %}
+              - {{ host }}
+              {% set ns.found = true %}
+              {% endif %}
+              {% endfor %}
+              {% if not ns.found %}
+              None
+              {% endif %}
+
+              Server with available updates before upgrade:
+              {% set ns = namespace(found=false) %}
+              {% for host in ansible_play_hosts %}
+              {% if (hostvars[host].updates_available_before.stdout | default("0") | int) > 0 %}
+              - {{ host }}: {{ hostvars[host].updates_available_before.stdout }} Updates
+              {% set ns.found = true %}
+              {% endif %}
+              {% endfor %}
+              {% if not ns.found %}
+              None
+              {% endif %}
+
+        - name: show report path
+          ansible.builtin.debug:
+            msg: "Update report generated: {{ report_file }}"
+
+      delegate_to: localhost
+      become: false
+      run_once: true
+
+    - name: send ubuntu update report via mail
+      ansible.builtin.include_tasks: mail-reporting.yml
+      vars:
+        mail_report_file: "{{ report_file }}"
+        mail_subject: "Ubuntu Update Report"
+        mail_to:
+          - "jannik.janzen@schuetz.net"
+        mail_body: |
+          Current Ubuntu Update Report (ASMGR01)
+
+        mail_delete_report_after_send: true
+      run_once: true

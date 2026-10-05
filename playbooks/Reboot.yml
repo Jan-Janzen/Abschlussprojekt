@@ -1,14 +1,14 @@
 ---
-- name: Neustart aller Server
-  hosts: ubuntu
+- name: Reboot all servers
+  hosts: all
   become: yes
   
   tasks:
-    - name: Server neustarten
+    - name: reboot servers
       ansible.builtin.reboot:
         reboot_timeout: 1800
-        msg: "Auto Reboot durch Ansible Semaphore"
+        msg: "Automatic reboot via Ansible Semaphore"
 
-    - name: Warten bis System wieder online
+    - name: Waiting for system restart
       ansible.builtin.wait_for_connection:
         timeout: 300
