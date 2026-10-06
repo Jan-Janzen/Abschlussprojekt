@@ -225,40 +225,41 @@
           Executed: {{ lookup('pipe', 'date "+%Y-%m-%d %H:%M:%S"') }}
           Playbook: Complete SUSE Linux update with report
           Release upgrade activated: {{ perform_release_upgrade | default(false) | bool }}
+          Cleanup of unneeded packages: {{ cleanup_unneeded | bool }}
 
           Overview
           ---------
 
-          {{ "%-18s %-22s %-22s %-20s %-20s %-22s %-16s %-10s %-12s %-12s" | format(
+          {{ "%-20s %-22s %-22s %-20s %-20s %-22s %-16s %-10s %-12s %-12s" | format(
             "Host",
             "SUSE before",
             "SUSE after",
             "Kernel before",
             "Kernel after",
             "Upgrade target",
-            "Release upg.",
+            "Release upgrade",
             "Updates",
             "Reboot",
             "Cleanup"
           ) }}
-          {{ "-" * 180 }}
+          {{ "-" * 184 }}
 
           {% for host in ansible_play_hosts %}
           {% set hv = hostvars[host] %}
 
-          {# Ziel des möglichen Release-Upgrades bestimmen #}
+          {# Determine the distribution type and possible upgrade target #}
           {% if hv.is_leap | default(false) | bool %}
-          {% set upgrade_target = hv.leap_target_release | default("not configured", true) %}
+          {% set upgrade_target = leap_target_release | default("not configured", true) %}
           {% elif hv.is_sles | default(false) | bool %}
           {% set upgrade_target = "SLES migration" if (hv.release_upgrade_available | default(false) | bool) else "not available" %}
           {% elif hv.is_tumbleweed | default(false) | bool %}
-          {% set upgrade_target = "rolling" %}
+          {% set upgrade_target = "rolling release" %}
           {% else %}
           {% set upgrade_target = "unknown" %}
           {% endif %}
 
-          {# Status des Release-Upgrades bestimmen #}
-          {% if not (hv.perform_release_upgrade | default(false) | bool) %}
+          {# Determine the release upgrade status #}
+          {% if not (perform_release_upgrade | default(false) | bool) %}
           {% set release_status = "disabled" %}
           {% elif not (hv.release_upgrade_available | default(false) | bool) %}
           {% set release_status = "not available" %}
@@ -273,24 +274,25 @@
           {% set release_status = "not executed" %}
           {% endif %}
 
-          {# Paketupdate-Status bestimmen #}
+          {# Determine the package update status #}
           {% if (hv.zypper_update.changed | default(false) | bool)
                 or (hv.zypper_dup.changed | default(false) | bool) %}
           {% set update_status = "changed" %}
           {% else %}
-          {% set update_status = "no change" %}
+          {% set update_status = "no changes" %}
           {% endif %}
 
-          {# Cleanup-Status bestimmen #}
-          {% if not (hv.cleanup_unneeded | default(true) | bool) %}
+          {# Determine the cleanup status #}
+          {% if not (cleanup_unneeded | default(true) | bool) %}
           {% set cleanup_status = "disabled" %}
-          {% elif (hv.autoremove_result.changed | default(false) | bool) %}
+          {% elif hv.autoremove_result is defined
+                and (hv.autoremove_result.changed | default(false) | bool) %}
           {% set cleanup_status = "changed" %}
           {% else %}
-          {% set cleanup_status = "no change" %}
+          {% set cleanup_status = "no changes" %}
           {% endif %}
 
-          {{ "%-18s %-22s %-22s %-20s %-20s %-22s %-16s %-10s %-12s %-12s" | format(
+          {{ "%-20s %-22s %-22s %-20s %-20s %-22s %-16s %-10s %-12s %-12s" | format(
             host,
             hv.os_before.stdout | default("unknown", true) | trim,
             hv.os_after.stdout | default("unknown", true) | trim,
@@ -311,19 +313,23 @@
           {% set hv = hostvars[host] %}
 
           Host: {{ host }}
-            Distribution vorher : {{ hv.os_before.stdout | default("unknown", true) | trim }}
-            Distribution nachher: {{ hv.os_after.stdout | default("unknown", true) | trim }}
-            Kernel vorher       : {{ hv.kernel_before.stdout | default("unknown", true) | trim }}
-            Kernel nachher      : {{ hv.kernel_after.stdout | default("unknown", true) | trim }}
-            Updates vorab       : {{ hv.updates_count | default("n/a", true) }}
-            Zypper update       : {{ "geändert" if (hv.zypper_update.changed | default(false) | bool) else "keine Änderung" }}
-            Zypper dist-upgrade : {{ "ausgeführt/geändert" if (hv.zypper_dup.changed | default(false) | bool) else "nicht ausgeführt/keine Änderung" }}
-            Reboot erforderlich : {{ "ja" if (hv.reboot_required | default(false) | bool) else "nein" }}
-            Cleanup aktiviert   : {{ "ja" if (hv.cleanup_unneeded | default(true) | bool) else "nein" }}
-            Pakete entfernt     : {{ (hv.unneeded_pkgs.stdout_lines | default([])) | length }}
+            Distribution before : {{ hv.os_before.stdout | default("unknown", true) | trim }}
+            Distribution after  : {{ hv.os_after.stdout | default("unknown", true) | trim }}
+            Kernel before       : {{ hv.kernel_before.stdout | default("unknown", true) | trim }}
+            Kernel after        : {{ hv.kernel_after.stdout | default("unknown", true) | trim }}
+            Updates available   : {{ hv.updates_count | default("n/a", true) }}
+
+            Zypper update       : {{ "changed" if (hv.zypper_update.changed | default(false) | bool) else "no changes" }}
+            Zypper dist-upgrade : {{ "changed" if (hv.zypper_dup.changed | default(false) | bool) else "not executed/no changes" }}
+
+            Upgrade target      : {{ upgrade_target | trim }}
+            Release upgrade     : {{ release_status | trim }}
+            Reboot required     : {{ "yes" if (hv.reboot_required | default(false) | bool) else "no" }}
+            Cleanup enabled     : {{ "yes" if (cleanup_unneeded | default(true) | bool) else "no" }}
+            Unneeded packages   : {{ (hv.unneeded_pkgs.stdout_lines | default([])) | length }}
 
           {% if hv.unneeded_pkgs.stdout_lines | default([]) | length > 0 %}
-            Entfernte/erkannte Pakete:
+            Detected unneeded packages:
           {% for package in hv.unneeded_pkgs.stdout_lines | default([]) %}
               - {{ package }}
           {% endfor %}
