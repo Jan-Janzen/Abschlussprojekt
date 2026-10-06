@@ -244,5 +244,5 @@
       vars:
         mail_to: "{{ report_recipient }}"
         mail_subject: "SUSE Update Report"
-        mail_attachment: "{{ mail_report_file }}"
+        mail_report_file: "{{ report_file }}"
       run_once: true
