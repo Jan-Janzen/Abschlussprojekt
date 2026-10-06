@@ -312,6 +312,33 @@
           {% for host in ansible_play_hosts %}
           {% set hv = hostvars[host] %}
 
+          {# Determine the upgrade target for this host #}
+          {% if hv.is_leap | default(false) | bool %}
+          {% set host_upgrade_target = leap_target_release | default("not configured", true) %}
+          {% elif hv.is_sles | default(false) | bool %}
+          {% set host_upgrade_target = "SLES migration" if (hv.release_upgrade_available | default(false) | bool) else "not available" %}
+          {% elif hv.is_tumbleweed | default(false) | bool %}
+          {% set host_upgrade_target = "rolling release" %}
+          {% else %}
+          {% set host_upgrade_target = "unknown" %}
+          {% endif %}
+
+          {# Determine the release upgrade status for this host #}
+          {% if not (perform_release_upgrade | default(false) | bool) %}
+          {% set host_release_status = "disabled" %}
+          {% elif not (hv.release_upgrade_available | default(false) | bool) %}
+          {% set host_release_status = "not available" %}
+          {% elif hv.release_upgrade_result is defined
+                and not (hv.release_upgrade_result.skipped | default(false) | bool) %}
+          {% if hv.release_upgrade_result.rc | default(1) | int == 0 %}
+          {% set host_release_status = "successful" %}
+          {% else %}
+          {% set host_release_status = "failed" %}
+          {% endif %}
+          {% else %}
+          {% set host_release_status = "not executed" %}
+          {% endif %}
+
           Host: {{ host }}
             Distribution before : {{ hv.os_before.stdout | default("unknown", true) | trim }}
             Distribution after  : {{ hv.os_after.stdout | default("unknown", true) | trim }}
@@ -322,8 +349,8 @@
             Zypper update       : {{ "changed" if (hv.zypper_update.changed | default(false) | bool) else "no changes" }}
             Zypper dist-upgrade : {{ "changed" if (hv.zypper_dup.changed | default(false) | bool) else "not executed/no changes" }}
 
-            Upgrade target      : {{ upgrade_target | trim }}
-            Release upgrade     : {{ release_status | trim }}
+            Upgrade target      : {{ host_upgrade_target | default("unknown", true) | trim }}
+            Release upgrade     : {{ host_release_status | default("unknown", true) | trim }}
             Reboot required     : {{ "yes" if (hv.reboot_required | default(false) | bool) else "no" }}
             Cleanup enabled     : {{ "yes" if (cleanup_unneeded | default(true) | bool) else "no" }}
             Unneeded packages   : {{ (hv.unneeded_pkgs.stdout_lines | default([])) | length }}
@@ -336,6 +363,7 @@
           {% endif %}
 
           {% endfor %}
+
       delegate_to: localhost
       become: false
       run_once: true
