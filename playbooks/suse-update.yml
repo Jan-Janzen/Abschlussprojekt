@@ -199,6 +199,7 @@
     - name: System bei Bedarf neu starten
       ansible.builtin.reboot:
         reboot_timeout: 1800
+      register: reboot_result
       when: reboot_required | bool
 
     # ------------------------------------------------------------------
@@ -221,21 +222,118 @@
           SUSE Update Report - {{ ansible_date_time.iso8601 | default('') }}
           ==========================================================
 
+          Executed: {{ lookup('pipe', 'date "+%Y-%m-%d %H:%M:%S"') }}
+          Playbook: Complete SUSE Linux update with report
+          Release upgrade activated: {{ perform_release_upgrade | default(false) | bool }}
+
+          Overview
+          ---------
+
+          {{ "%-18s %-22s %-22s %-20s %-20s %-22s %-16s %-10s %-12s %-12s" | format(
+            "Host",
+            "SUSE before",
+            "SUSE after",
+            "Kernel before",
+            "Kernel after",
+            "Upgrade target",
+            "Release upg.",
+            "Updates",
+            "Reboot",
+            "Cleanup"
+          ) }}
+          {{ "-" * 180 }}
+
           {% for host in ansible_play_hosts %}
+          {% set hv = hostvars[host] %}
+
+          {# Ziel des möglichen Release-Upgrades bestimmen #}
+          {% if hv.is_leap | default(false) | bool %}
+          {% set upgrade_target = hv.leap_target_release | default("not configured", true) %}
+          {% elif hv.is_sles | default(false) | bool %}
+          {% set upgrade_target = "SLES migration" if (hv.release_upgrade_available | default(false) | bool) else "not available" %}
+          {% elif hv.is_tumbleweed | default(false) | bool %}
+          {% set upgrade_target = "rolling" %}
+          {% else %}
+          {% set upgrade_target = "unknown" %}
+          {% endif %}
+
+          {# Status des Release-Upgrades bestimmen #}
+          {% if not (hv.perform_release_upgrade | default(false) | bool) %}
+          {% set release_status = "disabled" %}
+          {% elif not (hv.release_upgrade_available | default(false) | bool) %}
+          {% set release_status = "not available" %}
+          {% elif hv.release_upgrade_result is defined
+                and not (hv.release_upgrade_result.skipped | default(false) | bool) %}
+          {% if hv.release_upgrade_result.rc | default(1) | int == 0 %}
+          {% set release_status = "successful" %}
+          {% else %}
+          {% set release_status = "failed" %}
+          {% endif %}
+          {% else %}
+          {% set release_status = "not executed" %}
+          {% endif %}
+
+          {# Paketupdate-Status bestimmen #}
+          {% if (hv.zypper_update.changed | default(false) | bool)
+                or (hv.zypper_dup.changed | default(false) | bool) %}
+          {% set update_status = "changed" %}
+          {% else %}
+          {% set update_status = "no change" %}
+          {% endif %}
+
+          {# Cleanup-Status bestimmen #}
+          {% if not (hv.cleanup_unneeded | default(true) | bool) %}
+          {% set cleanup_status = "disabled" %}
+          {% elif (hv.autoremove_result.changed | default(false) | bool) %}
+          {% set cleanup_status = "changed" %}
+          {% else %}
+          {% set cleanup_status = "no change" %}
+          {% endif %}
+
+          {{ "%-18s %-22s %-22s %-20s %-20s %-22s %-16s %-10s %-12s %-12s" | format(
+            host,
+            hv.os_before.stdout | default("unknown", true) | trim,
+            hv.os_after.stdout | default("unknown", true) | trim,
+            hv.kernel_before.stdout | default("unknown", true) | trim,
+            hv.kernel_after.stdout | default("unknown", true) | trim,
+            upgrade_target | trim,
+            release_status | trim,
+            hv.updates_count | default("n/a", true),
+            "required" if (hv.reboot_required | default(false) | bool) else "no",
+            cleanup_status | trim
+          ) }}
+          {% endfor %}
+
+          Details
+          -------
+
+          {% for host in ansible_play_hosts %}
+          {% set hv = hostvars[host] %}
+
           Host: {{ host }}
-            Version vorher : {{ hostvars[host].os_before.stdout }}
-            Version nachher: {{ hostvars[host].os_after.stdout }}
-            Kernel vorher  : {{ hostvars[host].kernel_before.stdout }}
-            Kernel nachher : {{ hostvars[host].kernel_after.stdout }}
-            Updates (vorab): {{ hostvars[host].updates_count }}
-            Neustart nötig : {{ 'ja' if hostvars[host].reboot_required else 'nein' }}
-            Autoremove     : {{ (hostvars[host].unneeded_pkgs.stdout_lines | default([])) | length }} Paket(e)
-            Release-Upgrade verfügbar: {{ 'ja' if hostvars[host].release_upgrade_available | bool else 'nein' }}
+            Distribution vorher : {{ hv.os_before.stdout | default("unknown", true) | trim }}
+            Distribution nachher: {{ hv.os_after.stdout | default("unknown", true) | trim }}
+            Kernel vorher       : {{ hv.kernel_before.stdout | default("unknown", true) | trim }}
+            Kernel nachher      : {{ hv.kernel_after.stdout | default("unknown", true) | trim }}
+            Updates vorab       : {{ hv.updates_count | default("n/a", true) }}
+            Zypper update       : {{ "geändert" if (hv.zypper_update.changed | default(false) | bool) else "keine Änderung" }}
+            Zypper dist-upgrade : {{ "ausgeführt/geändert" if (hv.zypper_dup.changed | default(false) | bool) else "nicht ausgeführt/keine Änderung" }}
+            Reboot erforderlich : {{ "ja" if (hv.reboot_required | default(false) | bool) else "nein" }}
+            Cleanup aktiviert   : {{ "ja" if (hv.cleanup_unneeded | default(true) | bool) else "nein" }}
+            Pakete entfernt     : {{ (hv.unneeded_pkgs.stdout_lines | default([])) | length }}
+
+          {% if hv.unneeded_pkgs.stdout_lines | default([]) | length > 0 %}
+            Entfernte/erkannte Pakete:
+          {% for package in hv.unneeded_pkgs.stdout_lines | default([]) %}
+              - {{ package }}
+          {% endfor %}
+          {% endif %}
 
           {% endfor %}
       delegate_to: localhost
       become: false
       run_once: true
+
 
     # ------------------------------------------------------------------
     # Report per E-Mail versenden
