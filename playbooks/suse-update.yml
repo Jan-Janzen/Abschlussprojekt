@@ -235,6 +235,20 @@
           {% for host in ansible_play_hosts %}
           {% set hv = hostvars[host] %}
 
+          {{ "%-20s %-22s %-22s %-20s %-20s %-22s %-16s %-10s %-12s %-12s" | format(
+            host,
+            hv.os_before.stdout | default("unknown", true) | trim | regex_replace("^SUSE Linux Enterprise Server", "SLES"),
+            hv.os_after.stdout | default("unknown", true) | trim | regex_replace("^SUSE Linux Enterprise Server", "SLES"),
+            hv.kernel_before.stdout | default("unknown", true) | trim,
+            hv.kernel_after.stdout | default("unknown", true) | trim,
+            upgrade_target | trim,
+            release_status | trim,
+            hv.updates_count | default("n/a", true),
+            "required" if (hv.reboot_required | default(false) | bool) else "no",
+            cleanup_status | trim
+          ) }}
+          {% endfor %}
+
           {# Determine the distribution type and possible upgrade target #}
           {% if hv.is_leap | default(false) | bool %}
           {% set upgrade_target = leap_target_release | default("not configured", true) %}
@@ -279,20 +293,6 @@
           {% else %}
           {% set cleanup_status = "no changes" %}
           {% endif %}
-
-          {{ "%-20s %-22s %-22s %-20s %-20s %-22s %-16s %-10s %-12s %-12s" | format(
-            host,
-            hv.os_before.stdout | default("unknown", true) | trim,
-            hv.os_after.stdout | default("unknown", true) | trim,
-            hv.kernel_before.stdout | default("unknown", true) | trim,
-            hv.kernel_after.stdout | default("unknown", true) | trim,
-            upgrade_target | trim,
-            release_status | trim,
-            hv.updates_count | default("n/a", true),
-            "required" if (hv.reboot_required | default(false) | bool) else "no",
-            cleanup_status | trim
-          ) }}
-          {% endfor %}
 
           Details
           -------
