@@ -1,6 +1,6 @@
 ---
 - name: update 
-  hosts: all
+  hosts: ubuntu
   become: true
   gather_facts: true
 
