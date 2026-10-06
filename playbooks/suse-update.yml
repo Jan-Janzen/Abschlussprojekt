@@ -53,10 +53,11 @@
     # ------------------------------------------------------------------
     # Repositories aktualisieren
     # ------------------------------------------------------------------
-#    - name: Paketquellen aktualisieren
-#      ansible.builtin.command: zypper --non-interactive refresh
-#      register: zypper_refresh
-#      changed_when: false
+    - name: Paketquellen aktualisieren
+      ansible.builtin.command: zypper --non-interactive refresh
+      register: zypper_refresh
+      changed_when: false
+      failed_when: false
 
     # ------------------------------------------------------------------
     # Verfügbare Updates ermitteln
