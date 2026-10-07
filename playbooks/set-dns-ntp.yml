@@ -12,7 +12,7 @@
       - 172.18.0.6
       - 172.18.0.4
     dns_search_domains:
-      - example.local
+      - schuetz.org
     # NTP läuft über die DNS-Server
     ntp_servers: "{{ dns_servers }}"
     # Optional: Fallback, leer lassen = keiner
