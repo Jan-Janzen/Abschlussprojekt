@@ -2,7 +2,7 @@
 # DNS (Netplan) und NTP (systemd-timesyncd) auf Ubuntu-Servern
 # Läuft in Semaphore als normales Playbook; Variablen am besten im Variable Group / Inventory setzen.
 - name: Statische DNS- und NTP-Server konfigurieren
-  hosts: all
+  hosts: ubuntu
   become: true
   gather_facts: true
 
