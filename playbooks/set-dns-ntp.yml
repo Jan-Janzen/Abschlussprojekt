@@ -1,0 +1,92 @@
+---
+# DNS (Netplan) und NTP (systemd-timesyncd) auf Ubuntu-Servern
+# Läuft in Semaphore als normales Playbook; Variablen am besten im Variable Group / Inventory setzen.
+- name: Statische DNS- und NTP-Server konfigurieren
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    dns_servers:
+      - 172.18.0.5
+      - 172.18.0.6
+      - 172.18.0.4
+    dns_search_domains:
+      - example.local
+    # NTP läuft über die DNS-Server
+    ntp_servers: "{{ dns_servers }}"
+    # Optional: Fallback, leer lassen = keiner
+    ntp_fallback_servers: []
+
+    # Interface automatisch aus der Default-Route; bei Bond/Bridge überschreiben
+    netplan_interface: "{{ ansible_facts['default_ipv4']['interface'] }}"
+    # ethernets | bonds | bridges | vlans
+    netplan_section: ethernets
+    netplan_dropin: /etc/netplan/99-dns.yaml
+
+  tasks:
+    - name: Netplan-Drop-in für DNS schreiben
+      ansible.builtin.copy:
+        dest: "{{ netplan_dropin }}"
+        owner: root
+        group: root
+        mode: "0600"
+        content: |
+          # Managed by Ansible - nicht manuell ändern
+          network:
+            version: 2
+            {{ netplan_section }}:
+              {{ netplan_interface }}:
+                nameservers:
+                  addresses: {{ dns_servers | to_json }}
+                  search: {{ dns_search_domains | to_json }}
+      notify: Netplan anwenden
+
+    - name: systemd-timesyncd Drop-in-Verzeichnis anlegen
+      ansible.builtin.file:
+        path: /etc/systemd/timesyncd.conf.d
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: NTP-Server für systemd-timesyncd setzen
+      ansible.builtin.copy:
+        dest: /etc/systemd/timesyncd.conf.d/10-ntp.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          # Managed by Ansible - nicht manuell ändern
+          [Time]
+          NTP={{ ntp_servers | join(' ') }}
+          FallbackNTP={{ ntp_fallback_servers | join(' ') }}
+      notify: timesyncd neu starten
+
+    - name: systemd-timesyncd aktivieren und starten
+      ansible.builtin.systemd:
+        name: systemd-timesyncd
+        enabled: true
+        state: started
+
+    - name: systemd-resolved aktivieren und starten
+      ansible.builtin.systemd:
+        name: systemd-resolved
+        enabled: true
+        state: started
+
+  handlers:
+    - name: Netplan validieren
+      ansible.builtin.command: netplan generate
+      changed_when: false
+      listen: Netplan anwenden
+
+    - name: Netplan übernehmen
+      ansible.builtin.command: netplan apply
+      changed_when: true
+      listen: Netplan anwenden
+
+    - name: timesyncd neu starten
+      ansible.builtin.systemd:
+        name: systemd-timesyncd
+        state: restarted
