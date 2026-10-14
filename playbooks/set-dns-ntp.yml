@@ -26,7 +26,7 @@
 
   pre_tasks:
     - name: Bestehende Netplan-Konfiguration auslesen
-      ansible_builtin_command:
+      ansible.builtin.command:
         argv:
           - netplan
           - get
@@ -35,7 +35,7 @@
         failed_when: false
   
     - name: Bestehende Konfiguration anzeigen
-      ansible_builtin_debug:
+      ansible.builtin.debug:
         msg: |
           === Effektive Netplan-Konfiguration ===
           {{ existing_netplan.stdout | default('Nicht gefunden') }}
