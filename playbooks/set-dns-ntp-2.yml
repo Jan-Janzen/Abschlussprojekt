@@ -1,0 +1,106 @@
+---
+# DNS (Netplan) und NTP (systemd-timesyncd) auf Ubuntu-Servern
+# Die Variablen dns_servers, dns_search_domains, ntp_servers
+# und ntp_fallback_servers werden über Semaphore gesetzt.
+
+- name: Statische DNS- und NTP-Server konfigurieren
+  hosts: ubuntu
+  become: true
+  gather_facts: true
+
+  vars:
+    # Interface automatisch aus der Default-Route;
+    # bei Bond/Bridge über Semaphore oder Inventory überschreiben
+    netplan_interface: "{{ ansible_facts['default_ipv4']['interface'] }}"
+
+    # Mögliche Werte: ethernets, bonds, bridges, vlans
+    netplan_section: ethernets
+
+    netplan_dropin: /etc/netplan/90-dns-test.yaml
+
+  tasks:
+    - name: Erforderliche Variablen prüfen
+      ansible.builtin.assert:
+        that:
+          - dns_servers is defined
+          - dns_search_domains is defined
+          - ntp_servers is defined
+          - ntp_fallback_servers is defined
+          - dns_servers is sequence
+          - dns_servers is not string
+          - dns_search_domains is sequence
+          - dns_search_domains is not string
+          - ntp_servers is sequence
+          - ntp_servers is not string
+          - ntp_fallback_servers is sequence
+          - ntp_fallback_servers is not string
+        fail_msg: >-
+          Die Variablen dns_servers, dns_search_domains, ntp_servers
+          und ntp_fallback_servers müssen in Semaphore als Listen
+          definiert werden.
+
+    - name: Netplan-Drop-in für DNS schreiben
+      ansible.builtin.copy:
+        dest: "{{ netplan_dropin }}"
+        owner: root
+        group: root
+        mode: "0600"
+        content: |
+          # Managed by Ansible - nicht manuell ändern
+          network:
+            version: 2
+            {{ netplan_section }}:
+              {{ netplan_interface }}:
+                nameservers:
+                  addresses: {{ dns_servers | to_json }}
+                  search: {{ dns_search_domains | to_json }}
+      notify: Netplan anwenden
+
+    - name: systemd-timesyncd Drop-in-Verzeichnis anlegen
+      ansible.builtin.file:
+        path: /etc/systemd/timesyncd.conf.d
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: NTP-Server für systemd-timesyncd setzen
+      ansible.builtin.copy:
+        dest: /etc/systemd/timesyncd.conf.d/10-ntp.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          # Managed by Ansible - nicht manuell ändern
+          [Time]
+          NTP={{ ntp_servers | join(' ') }}
+          FallbackNTP={{ ntp_fallback_servers | join(' ') }}
+      notify: timesyncd neu starten
+
+    - name: systemd-timesyncd aktivieren und starten
+      ansible.builtin.systemd:
+        name: systemd-timesyncd
+        enabled: true
+        state: started
+
+    - name: systemd-resolved aktivieren und starten
+      ansible.builtin.systemd:
+        name: systemd-resolved
+        enabled: true
+        state: started
+
+  handlers:
+    - name: Netplan validieren
+      ansible.builtin.command: netplan generate
+      changed_when: false
+      listen: Netplan anwenden
+
+    - name: Netplan übernehmen
+      ansible.builtin.command: netplan apply
+      changed_when: true
+      listen: Netplan anwenden
+
+    - name: timesyncd neu starten
+      ansible.builtin.systemd:
+        name: systemd-timesyncd
+        state: restarted
