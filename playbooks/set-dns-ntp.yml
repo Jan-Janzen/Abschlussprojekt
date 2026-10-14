@@ -1,32 +1,40 @@
 ---
 # DNS (Netplan) und NTP (systemd-timesyncd) auf Ubuntu-Servern
-# Läuft in Semaphore als normales Playbook; Variablen am besten im Variable Group / Inventory setzen.
+# Die Variablen dns_servers, dns_search_domains, ntp_servers und ntp_fallback_servers werden über Semaphore gesetzt
+
 - name: Statische DNS- und NTP-Server konfigurieren
   hosts: ubuntu
   become: true
   gather_facts: true
 
   vars:
-    dns_servers:
-      - 172.18.0.5
-      - 172.18.0.6
-      - 172.18.0.4
-    dns_search_domains:
-      - schuetz.org
-    # NTP läuft über die DNS-Server
-    ntp_servers: "{{ dns_servers }}"
-    # Optional: Fallback, leer lassen = keiner
-    ntp_fallback_servers: []
-
     # Interface automatisch aus der Default-Route; bei Bond/Bridge überschreiben
     netplan_interface: "{{ ansible_facts['default_ipv4']['interface'] }}"
     # ethernets | bonds | bridges | vlans
     netplan_section: ethernets
     netplan_dropin: /etc/netplan/99-dns.yaml
 
-
-
   tasks:
+    - name: Erforderliche Variablen prüfen
+      ansible.builtin.assert:
+        that:
+          - dns_servers is defined
+          - dns_search_domains is defined
+          - ntp_servers is defined
+          - ntp_fallback_servers is defined
+          - dns_servers is sequence
+          - dns_servers is not string
+          - dns_search_domains is sequence
+          - dns_search_domains is not string
+          - ntp_servers is sequence
+          - ntp_servers is not string
+          - ntp_fallback_servers is sequence
+          - ntp_fallback_servers is not string
+        fail_msg: >-
+          Die Variablen dns_servers, dns_search_domains, ntp_servers
+          und ntp_fallback_servers müssen in Semaphore als Listen
+          definiert werden.
+
     - name: Netplan-Drop-in für DNS schreiben
       ansible.builtin.copy:
         dest: "{{ netplan_dropin }}"
