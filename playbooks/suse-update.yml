@@ -1,6 +1,5 @@
 ---
 # SUSE Linux Update-Playbook (SLES / openSUSE Leap / openSUSE Tumbleweed)
-# Gegenstück zum Ubuntu-Playbook.
 # Benötigt: Collection ansible.builtin (Core), zypper auf den Zielhosts
 #
 # Wichtige Variablen:
@@ -230,7 +229,7 @@
           Overview
           ---------
 
-          {{ "%-20s %-22s %-22s %-24s %-24s %-22s %-16s %-10s %-12s %-12s" | format("Host", "SUSE before", "SUSE after", "Kernel before", "Kernel after", "Upgrade target", "Release upgrade", "Updates", "Reboot", "Cleanup") }}
+          {{ "%-20s %-15s %-15s %-24s %-24s %-22s %-16s %-10s %-12s %-12s" | format("Host", "SUSE before", "SUSE after", "Kernel before", "Kernel after", "Upgrade target", "Release upgrade", "Updates", "Reboot", "Cleanup") }}
           {{ "-" * 184 }}
           {% for host in ansible_play_hosts %}
           {% set hv = hostvars[host] %}
