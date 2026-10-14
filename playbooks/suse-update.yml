@@ -230,7 +230,7 @@
           ---------
 
           {{ "%-20s %-15s %-15s %-24s %-24s %-22s %-16s %-10s %-12s %-12s" | format("Host", "SUSE before", "SUSE after", "Kernel before", "Kernel after", "Upgrade target", "Release upgrade", "Updates", "Reboot", "Cleanup") }}
-          {{ "-" * 184 }}
+          {{ "-" * 179 }}
           {% for host in ansible_play_hosts %}
           {% set hv = hostvars[host] %}
 
