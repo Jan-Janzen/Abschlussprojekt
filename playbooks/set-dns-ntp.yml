@@ -24,24 +24,7 @@
     netplan_section: ethernets
     netplan_dropin: /etc/netplan/99-dns.yaml
 
-  pre_tasks:
-    - name: Bestehende Netplan-Konfiguration auslesen
-      ansible.builtin.command:
-        argv:
-          - netplan
-          - get
-        register: existing_netplan
-        changed_when: false
-        failed_when: false
-  
-    - name: Bestehende Konfiguration anzeigen
-      ansible.builtin.debug:
-        msg: |
-          === Effektive Netplan-Konfiguration ===
-          {{ existing_netplan.stdout | default('Nicht gefunden') }}
-        
-          === Fehler ===
-          {{ existing_netplan.stderr | default('Keine Fehler') }}
+
 
   tasks:
     - name: Netplan-Drop-in für DNS schreiben
